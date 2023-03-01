@@ -1,8 +1,25 @@
 [package]
 name = "zero2prod"
 version = "0.1.0"
+authors = ["Pandula Weerasooriya <pandula.official@gmail.com>"]
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+# We could use any path here, but the community convention is
+# specifying a library name using the `name` field. If unspecified,
+# cargo will default to `package.name`.
+path = "src/lib.rs"
+
+# The double square brackets is an array in TOML's syntax.
+# We can only have one library in a project, but we can have multiple binaries.
+[[bin]]
+path = "src/main.rs"
+name = "zero2prod"
+
 
 [dependencies]
+actix-web = "4"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[dev-dependencies]
+reqwest = "0.11"
