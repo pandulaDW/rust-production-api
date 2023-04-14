@@ -1,0 +1,1 @@
+RUST_DB_USER=${POSTGRES_USER:=postgres}

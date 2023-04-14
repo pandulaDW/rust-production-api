@@ -1,5 +1,5 @@
 use std::net;
-use zero2prod::run;
+use zero2prod::startup::run;
 
 fn main() -> std::io::Result<()> {
     let listener = net::TcpListener::bind("127.0.0.1:8000")?;

@@ -1,9 +1,1 @@
-GET http://localhost:8000
-
-###
-
-GET http://localhost:8000/pandula
-
-
-###
 GET http://localhost:8000/health_check
