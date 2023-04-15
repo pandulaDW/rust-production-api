@@ -1,7 +1,9 @@
-#!/bin/zsh
+#!/usr/bin/env bash
 
 set -x
 set -eo pipefail
+
+echo "running this script"
 
 # install psql
 if ! [ -x "$(command -v psql)" ]; then
@@ -19,29 +21,27 @@ if ! [ -x "$(command -v sqlx)" ]; then
 fi
 
 # Check if a custom user has been set, otherwise default to 'postgres'
-RUST_DB_USER=${POSTGRES_USER:=postgres}
+DB_USER=${POSTGRES_USER:=postgres}
 
 # Check if a custom password has been set, otherwise default to 'password'
-RUST_DB_PASSWORD="${POSTGRES_PASSWORD:=password}"
+DB_PASSWORD="${POSTGRES_PASSWORD:=password}"
 
 # Check if a custom database name has been set, otherwise default to 'newsletter'
-RUST_DB_NAME="${POSTGRES_DB:=newsletter}"
+DB_NAME="${POSTGRES_DB:=newsletter}"
 
 # Check if a custom port has been set, otherwise default to '5432'
-RUST_DB_PORT="${POSTGRES_PORT:=5433}"
+DB_PORT="${POSTGRES_PORT:=5433}"
 
 # Launch postgres using Docker
 # Allow to skip Docker if a dockerized Postgres database is already running
-if [[ -z "${SKIP_DOCKER}" ]]
-then 
-  docker run \
-    -e POSTGRES_USER=${RUST_DB_USER} \
-    -e POSTGRES_PASSWORD=${RUST_DB_PASSWORD} \
-    -e POSTGRES_DB=${RUST_DB_NAME} \
-    -p "${RUST_DB_PORT}":5433 \
-    --rm postgres:11-alpine \
+docker run \
+    -e POSTGRES_USER=${DB_USER} \
+    -e POSTGRES_PASSWORD=${DB_PASSWORD} \
+    -e POSTGRES_DB=${DB_NAME} \
+    -p "${DB_PORT}":5432 \
+    --name postgres \
+    -d --rm postgres:11-alpine \
     postgres -N 1000 # ^ Increased maximum number of connections for testing purposes
-fi
 
 # Keep pinging Postgres until it's ready to accept commands
 export PGPASSWORD="${DB_PASSWORD}"
@@ -52,7 +52,7 @@ done
 
 >&2 echo "Postgres is up and running on port ${DB_PORT}!"
 
-export DATABASE_URL=postgres://${RUST_DB_USER}:${RUST_DB_PASSWORD}@localhost:${RUST_DB_PORT}/${RUST_DB_NAME}
+export DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@localhost:${DB_PORT}/${DB_NAME}
 sqlx database create # uses DATABASE_URL
 sqlx migrate run # run migrations
 
