@@ -1,11 +1,11 @@
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use std::net;
 use uuid::Uuid;
-use zero2prod::configuration::{get_configuration, DatabaseSettings};
+use zero2prod::configuration::{get_configuration, DatabaseSettings, Settings};
 
 #[tokio::test]
 async fn health_check_works() {
-    let address = spawn_app().await;
+    let (address, _) = spawn_app().await;
     let client = reqwest::Client::new();
     let response = client
         .get(format!("http://{address}/health_check"))
@@ -19,10 +19,8 @@ async fn health_check_works() {
 
 #[tokio::test]
 async fn subscribe_returns_a_200_for_valid_form_data() {
-    let address = spawn_app().await;
-    let configuration = get_configuration().expect("failed to read configuration");
-    let conn_string = configuration.database.connection_string();
-    let mut db_conn = PgConnection::connect(&conn_string)
+    let (address, config) = spawn_app().await;
+    let mut db_conn = PgConnection::connect(&config.database.connection_string())
         .await
         .expect("failed to connect to Postgres");
 
@@ -50,7 +48,7 @@ async fn subscribe_returns_a_200_for_valid_form_data() {
 
 #[tokio::test]
 async fn subscribe_returns_a_400_when_data_is_missing() {
-    let address = spawn_app().await;
+    let (address, _) = spawn_app().await;
     let client = reqwest::Client::new();
     let test_cases = vec![
         ("name=le%20guin", "missing the email"),
@@ -78,7 +76,7 @@ async fn subscribe_returns_a_400_when_data_is_missing() {
 
 /// Spin up an instance of our application
 /// and returns its address (i.e. http://localhost:XXXX)
-async fn spawn_app() -> String {
+async fn spawn_app() -> (String, Settings) {
     let listener = net::TcpListener::bind("127.0.0.1:0").expect("failed to bind address");
     let port = listener.local_addr().unwrap().port();
 
@@ -91,7 +89,7 @@ async fn spawn_app() -> String {
     // launch the server as a background task
     let _ = tokio::spawn(server);
 
-    format!("127.0.0.1:{port}")
+    (format!("127.0.0.1:{port}"), config)
 }
 
 /// creates a new test database and returns a connection to it

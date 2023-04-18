@@ -16,6 +16,23 @@ pub struct FormData {
 /// This handler get called only if content type is *x-www-form-urlencoded*
 /// and content of the request could be deserialized to a `FormData` struct.
 pub async fn subscribe(form: web::Form<FormData>, db_conn: web::Data<PgPool>) -> HttpResponse {
+    let request_id = Uuid::new_v4();
+    let request_span = tracing::info_span!(
+        "Adding a new subscriber.",
+        %request_id,
+        subscriber_email = %form.email,
+        subscriber_name= %form.name
+    );
+
+    let _request_span_guard = request_span.enter();
+
+    tracing::info!(
+        "request_id {} - Adding '{}' '{}' as a new subscriber.",
+        request_id,
+        form.email,
+        form.name
+    );
+
     match sqlx::query!(
         r#"INSERT INTO subscriptions (id, email, name, subscribed_at) VALUES ($1, $2, $3, $4)"#,
         Uuid::new_v4(),
@@ -26,9 +43,19 @@ pub async fn subscribe(form: web::Form<FormData>, db_conn: web::Data<PgPool>) ->
     .execute(db_conn.get_ref())
     .await
     {
-        Ok(_) => HttpResponse::Ok().finish(),
+        Ok(_) => {
+            tracing::info!(
+                "request_id {} - New subscriber details have been saved",
+                request_id
+            );
+            HttpResponse::Ok().finish()
+        }
         Err(e) => {
-            println!("failed to execute query: {e}");
+            tracing::error!(
+                "request_id {} - failed to execute query: {:?}",
+                e,
+                request_id
+            );
             HttpResponse::InternalServerError().finish()
         }
     }

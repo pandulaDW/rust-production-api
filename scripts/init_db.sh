@@ -57,3 +57,5 @@ sqlx database create # uses DATABASE_URL
 sqlx migrate run # run migrations
 
 >&2 echo "Postgres has been migrated, ready to go!"
+
+# psql -h "localhost" -U "postgres" -p 5433 -d "newsletter"

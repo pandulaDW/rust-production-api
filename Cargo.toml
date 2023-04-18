@@ -25,6 +25,9 @@ config = "0.11"
 sqlx = { version = "0.6", default-features = false, features = ["runtime-actix-rustls", "macros", "postgres", "uuid", "chrono", "migrate", "offline"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4.22", default-features = false, features = ["clock"] }
+env_logger = "0.9"
+log = "0.4"
+tracing = { version = "0.1", features = ["log"] }
 
 [dev-dependencies]
 reqwest = "0.11"
