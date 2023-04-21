@@ -17,7 +17,7 @@ pub struct FormData {
 /// and content of the request could be deserialized to a `FormData` struct.
 #[tracing::instrument(
     name = "Adding a new subscriber", skip(form, pool),
-    fields(subscriber_email = %form.email, subscriber_name= %form.name) 
+    fields(subscriber_email = %form.email, subscriber_name= %form.name)
 )]
 pub async fn subscribe(form: web::Form<FormData>, pool: web::Data<PgPool>) -> HttpResponse {
     match insert_subscriber(&pool, &form).await {
