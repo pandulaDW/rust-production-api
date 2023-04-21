@@ -17,9 +17,7 @@ async fn main() -> std::io::Result<()> {
         .expect("incorrect db uri")
         .disable_statement_logging()
         .clone();
-    let conn_pool = PgPool::connect_with(options)
-        .await
-        .expect("failed to connect to postgres");
+    let conn_pool = PgPool::connect_lazy_with(options);
 
     let listener = net::TcpListener::bind(format!("127.0.0.1:{}", configuration.application_port))?;
     run(listener, conn_pool)?.await
