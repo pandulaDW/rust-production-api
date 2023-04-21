@@ -2,8 +2,9 @@ use serde::Deserialize;
 
 #[derive(Deserialize)]
 pub struct Settings {
+    pub env: Option<Environment>,
     pub database: DatabaseSettings,
-    pub application_port: u16,
+    pub application: ApplicationSettings,
 }
 
 /// Read the application settings from a configuration file
@@ -11,13 +12,68 @@ pub fn get_configuration() -> Result<Settings, config::ConfigError> {
     // Initialize the configuration reader
     let mut settings = config::Config::default();
 
-    // Add configuration values from a file named `configuration`.
-    // It will look for any top-level file with an extension
-    // that `config` knows how to parse: yaml, json, etc.
-    settings.merge(config::File::with_name("configuration"))?;
+    let base_path = std::env::current_dir().expect("failed to determine the current directory");
+    let config_dir = base_path.join("configuration");
+
+    // Read the "default" configuration file
+    settings.merge(config::File::from(config_dir.join("base")).required(true))?;
+
+    // Detect the running environment and default to `local` if unspecified.
+    let environment: Environment = std::env::var("APP_ENVIRONMENT")
+        .unwrap_or_else(|_| "local".into())
+        .try_into()
+        .expect("Failed to parse APP_ENVIRONMENT.");
+
+    // Layer on the environment-specific values.
+    settings.merge(config::File::from(config_dir.join(environment.as_str())).required(true))?;
 
     // Try to convert the configuration values it read into our Settings type
-    settings.try_into()
+    let out = settings.try_into();
+
+    if out.is_ok() {
+        let mut out: Settings = out.unwrap();
+        out.env = Some(environment);
+        return Ok(out);
+    }
+
+    out
+}
+
+#[derive(Deserialize)]
+pub struct ApplicationSettings {
+    pub port: u16,
+    pub host: String,
+}
+
+/// The possible runtime environment for our application.
+#[derive(Deserialize)]
+pub enum Environment {
+    Local,
+    Production,
+}
+
+impl Environment {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Environment::Local => "local",
+            Environment::Production => "production",
+        }
+    }
+}
+
+impl TryFrom<String> for Environment {
+    type Error = String;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        match value.to_lowercase().as_str() {
+            "local" => Ok(Self::Local),
+            "production" => Ok(Self::Production),
+            other => Err(format!(
+                "{} is not a supported environment. Use either `local` or `production`.",
+                other
+            )),
+        }
+    }
 }
 
 #[derive(Deserialize)]

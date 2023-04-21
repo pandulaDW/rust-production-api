@@ -1,7 +1,6 @@
-use sqlx::postgres::PgConnectOptions;
-use sqlx::{ConnectOptions, PgPool};
+use sqlx::postgres::PgPoolOptions;
 use std::net;
-use std::str::FromStr;
+use tracing::info;
 
 use zero2prod::configuration::get_configuration;
 use zero2prod::startup::run;
@@ -13,12 +12,21 @@ async fn main() -> std::io::Result<()> {
     telemetry::init_subscriber(subscriber);
 
     let configuration = get_configuration().expect("failed to read configuration");
-    let options = PgConnectOptions::from_str(&configuration.database.connection_string())
-        .expect("incorrect db uri")
-        .disable_statement_logging()
-        .clone();
-    let conn_pool = PgPool::connect_lazy_with(options);
+    let conn_pool = PgPoolOptions::new()
+        .acquire_timeout(std::time::Duration::from_secs(2))
+        .connect_lazy(&configuration.database.connection_string())
+        .expect("failed to create postgres connection");
 
-    let listener = net::TcpListener::bind(format!("127.0.0.1:{}", configuration.application_port))?;
+    let address = format!(
+        "{}:{}",
+        configuration.application.host, configuration.application.port
+    );
+
+    info!(
+        "App running on env {} and address {}",
+        configuration.env.unwrap().as_str(),
+        address
+    );
+    let listener = net::TcpListener::bind(address)?;
     run(listener, conn_pool)?.await
 }

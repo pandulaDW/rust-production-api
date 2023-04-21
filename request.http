@@ -1,4 +1,4 @@
-GET http://localhost:8000/health_check
+GET http://127.0.0.1:8000/health_check
 
 ###
 POST http://localhost:8000/subscriptions
