@@ -1,4 +1,6 @@
 use serde::Deserialize;
+use serde_aux::field_attributes::deserialize_number_from_string;
+use sqlx::postgres::PgConnectOptions;
 
 #[derive(Deserialize)]
 pub struct Settings {
@@ -27,13 +29,16 @@ pub fn get_configuration() -> Result<Settings, config::ConfigError> {
     // Layer on the environment-specific values.
     settings.merge(config::File::from(config_dir.join(environment.as_str())).required(true))?;
 
-    // Try to convert the configuration values it read into our Settings type
-    let out = settings.try_into();
+    // Add in settings from environment variables (with a prefix of APP and '__' as separator)
+    // E.g. `APP_APPLICATION__PORT=5001 would set `Settings.application.port`
+    settings.merge(config::Environment::with_prefix("app").separator("__"))?;
 
-    if out.is_ok() {
-        let mut out: Settings = out.unwrap();
-        out.env = Some(environment);
-        return Ok(out);
+    // Try to convert the configuration values it read into our Settings type
+    let out: Result<Settings, config::ConfigError> = settings.try_into();
+
+    if let Ok(mut s) = out {
+        s.env = Some(environment);
+        return Ok(s);
     }
 
     out
@@ -41,6 +46,7 @@ pub fn get_configuration() -> Result<Settings, config::ConfigError> {
 
 #[derive(Deserialize)]
 pub struct ApplicationSettings {
+    #[serde(deserialize_with = "deserialize_number_from_string")]
     pub port: u16,
     pub host: String,
 }
@@ -80,23 +86,23 @@ impl TryFrom<String> for Environment {
 pub struct DatabaseSettings {
     pub username: String,
     pub password: String,
+
+    #[serde(deserialize_with = "deserialize_number_from_string")]
     pub port: u16,
     pub host: String,
     pub database_name: String,
 }
 
 impl DatabaseSettings {
-    pub fn connection_string(&self) -> String {
-        format!(
-            "postgres://{}:{}@{}:{}/{}",
-            self.username, self.password, self.host, self.port, self.database_name
-        )
+    pub fn without_db(&self) -> PgConnectOptions {
+        PgConnectOptions::new()
+            .username(&self.username)
+            .password(&self.password)
+            .host(&self.host)
+            .port(self.port)
     }
 
-    pub fn connection_string_without_db(&self) -> String {
-        format!(
-            "postgres://{}:{}@{}:{}",
-            self.username, self.password, self.host, self.port
-        )
+    pub fn with_db(&self) -> PgConnectOptions {
+        self.without_db().database(&self.database_name)
     }
 }

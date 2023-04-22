@@ -39,7 +39,7 @@ async fn health_check_works() {
 #[tokio::test]
 async fn subscribe_returns_a_200_for_valid_form_data() {
     let (address, config) = spawn_app().await;
-    let mut db_conn = PgConnection::connect(&config.database.connection_string())
+    let mut db_conn = PgConnection::connect_with(&config.database.with_db())
         .await
         .expect("failed to connect to Postgres");
 
@@ -116,7 +116,7 @@ async fn spawn_app() -> (String, Settings) {
 
 /// creates a new test database and returns a connection to it
 async fn configure_database(config: &DatabaseSettings) -> PgPool {
-    let mut conn = PgConnection::connect(&config.connection_string_without_db())
+    let mut conn = PgConnection::connect_with(&config.without_db())
         .await
         .expect("failed to connect to Postgres");
 
@@ -124,7 +124,7 @@ async fn configure_database(config: &DatabaseSettings) -> PgPool {
         .await
         .expect("failed to create database.");
 
-    let pool = PgPool::connect(&config.connection_string())
+    let pool = PgPool::connect_with(config.with_db())
         .await
         .expect("failed to connect to postgres");
 
