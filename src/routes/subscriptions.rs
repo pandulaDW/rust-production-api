@@ -4,12 +4,12 @@ use serde::Deserialize;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::domain::{NewSubscriber, SubscriberName};
+use crate::domain::NewSubscriber;
 
 #[derive(Deserialize)]
 pub struct FormData {
-    email: String,
-    name: String,
+    pub email: String,
+    pub name: String,
 }
 
 /// Subscribe an email to the newsletter.
@@ -22,16 +22,12 @@ pub struct FormData {
     fields(subscriber_email = %form.email, subscriber_name= %form.name)
 )]
 pub async fn subscribe(form: web::Form<FormData>, pool: web::Data<PgPool>) -> HttpResponse {
-    let Ok(name) = SubscriberName::parse(form.0.name) else {
-        return HttpResponse::BadRequest().finish();
+    let new_subscriber = match form.0.try_into() {
+        Ok(v) => v,
+        Err(_) => return HttpResponse::BadRequest().finish(),
     };
 
-    let s = NewSubscriber {
-        email: form.0.email,
-        name,
-    };
-
-    match insert_subscriber(&pool, s).await {
+    match insert_subscriber(&pool, new_subscriber).await {
         Ok(_) => HttpResponse::Ok().finish(),
         Err(_) => HttpResponse::InternalServerError().finish(),
     }
@@ -42,7 +38,7 @@ async fn insert_subscriber(pool: &PgPool, s: NewSubscriber) -> Result<(), sqlx::
     sqlx::query!(
         r#"INSERT INTO subscriptions (id, email, name, subscribed_at) VALUES ($1, $2, $3, $4)"#,
         Uuid::new_v4(),
-        s.email,
+        s.email.as_ref(),
         s.name.as_ref(),
         Utc::now()
     )
