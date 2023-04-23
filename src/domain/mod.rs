@@ -1,7 +1,7 @@
 mod subscriber_email;
 mod subscriber_name;
 
-use subscriber_email::SubscriberEmail;
+pub use subscriber_email::SubscriberEmail;
 use subscriber_name::SubscriberName;
 
 use crate::routes::FormData;

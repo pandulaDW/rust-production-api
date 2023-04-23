@@ -4,7 +4,7 @@ use tracing::info;
 
 use zero2prod::configuration::get_configuration;
 use zero2prod::startup::run;
-use zero2prod::telemetry;
+use zero2prod::{email_client::EmailClient, telemetry};
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
@@ -18,6 +18,14 @@ async fn main() -> std::io::Result<()> {
         .await
         .expect("failed to connect to postgres");
 
+    let email_client = EmailClient::new(
+        configuration.email_client.base_url.clone(),
+        configuration
+            .email_client
+            .sender()
+            .expect("invalid sender email"),
+    );
+
     let address = format!(
         "{}:{}",
         configuration.application.host, configuration.application.port
@@ -29,5 +37,5 @@ async fn main() -> std::io::Result<()> {
         address
     );
     let listener = net::TcpListener::bind(address)?;
-    run(listener, conn_pool)?.await
+    run(listener, conn_pool, email_client)?.await
 }

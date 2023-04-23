@@ -5,6 +5,7 @@ use std::net;
 use uuid::Uuid;
 use zero2prod::{
     configuration::{get_configuration, DatabaseSettings, Settings},
+    email_client::EmailClient,
     telemetry,
 };
 
@@ -114,7 +115,13 @@ async fn spawn_app() -> (String, Settings) {
     config.database.database_name = Uuid::new_v4().to_string();
     let conn_pool = configure_database(&config.database).await;
 
-    let server = zero2prod::startup::run(listener, conn_pool).expect("failed to start the server");
+    let email_client = EmailClient::new(
+        config.email_client.base_url.clone(),
+        config.email_client.sender().expect("invalid sender email"),
+    );
+
+    let server = zero2prod::startup::run(listener, conn_pool, email_client)
+        .expect("failed to start the server");
 
     // launch the server as a background task
     let _ = tokio::spawn(server);
