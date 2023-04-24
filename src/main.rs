@@ -21,7 +21,8 @@ async fn main() -> std::io::Result<()> {
     let email_client = EmailClient::new(
         config.email_client.base_url.clone(),
         config.email_client.sender().expect("invalid sender email"),
-        config.email_client.auth_token,
+        config.email_client.auth_token.clone(),
+        config.email_client.timeout(),
     );
 
     let address = format!("{}:{}", config.application.host, config.application.port);
