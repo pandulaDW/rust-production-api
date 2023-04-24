@@ -118,6 +118,7 @@ async fn spawn_app() -> (String, Settings) {
     let email_client = EmailClient::new(
         config.email_client.base_url.clone(),
         config.email_client.sender().expect("invalid sender email"),
+        config.email_client.auth_token.clone(),
     );
 
     let server = zero2prod::startup::run(listener, conn_pool, email_client)

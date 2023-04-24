@@ -11,29 +11,24 @@ async fn main() -> std::io::Result<()> {
     let subscriber = telemetry::get_subscriber("zero2prod", "info", std::io::stdout);
     telemetry::init_subscriber(subscriber);
 
-    let configuration = get_configuration().expect("failed to read configuration");
+    let config = get_configuration().expect("failed to read configuration");
     let conn_pool = PgPoolOptions::new()
         .acquire_timeout(std::time::Duration::from_secs(2))
-        .connect_with(configuration.database.with_db())
+        .connect_with(config.database.with_db())
         .await
         .expect("failed to connect to postgres");
 
     let email_client = EmailClient::new(
-        configuration.email_client.base_url.clone(),
-        configuration
-            .email_client
-            .sender()
-            .expect("invalid sender email"),
+        config.email_client.base_url.clone(),
+        config.email_client.sender().expect("invalid sender email"),
+        config.email_client.auth_token,
     );
 
-    let address = format!(
-        "{}:{}",
-        configuration.application.host, configuration.application.port
-    );
+    let address = format!("{}:{}", config.application.host, config.application.port);
 
     info!(
         "App running on env {} and address {}",
-        configuration.env.unwrap().as_str(),
+        config.env.unwrap().as_str(),
         address
     );
     let listener = net::TcpListener::bind(address)?;
