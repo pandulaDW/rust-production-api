@@ -167,7 +167,6 @@ mod tests {
     async fn send_email(server_uri: String, timeout: Duration) -> Result<(), reqwest::Error> {
         let sender = SubscriberEmail::parse(SafeEmail().fake()).unwrap();
         let email_client = EmailClient::new(server_uri, sender, Secret::new(Faker.fake()), timeout);
-
         let subscriber_email = SubscriberEmail::parse(SafeEmail().fake()).unwrap();
         let subject: String = Sentence(1..2).fake();
         let content: String = Paragraph(1..10).fake();
