@@ -1,11 +1,11 @@
 use once_cell::sync::Lazy;
-use reqwest::Response;
+use reqwest::{Response, Url};
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use tokio::task::AbortHandle;
 use uuid::Uuid;
-use wiremock::MockServer;
+use wiremock::{MockServer, Request};
 use zero2prod::{
-    configuration::{get_configuration, DatabaseSettings},
+    configuration::{get_configuration, DatabaseSettings, Environment},
     startup::{get_connection_pool, Application},
     telemetry,
 };
@@ -48,6 +48,28 @@ impl TestApp {
             .await
             .expect("failed to execute request.")
     }
+
+    /// Extract the confirmation links (html and plain text) from the mail body
+    pub fn get_confirmation_links(&self, email_request: &Request) -> (Url, Url) {
+        let body: serde_json::Value = serde_json::from_slice(&email_request.body).unwrap();
+
+        let get_link = |s: &str| {
+            let links: Vec<_> = linkify::LinkFinder::new()
+                .links(s)
+                .filter(|l| *l.kind() == linkify::LinkKind::Url)
+                .collect();
+            assert_eq!(links.len(), 1);
+
+            let raw_link = links[0].as_str().to_owned();
+            let confirmation_link = Url::parse(&raw_link).unwrap();
+            confirmation_link
+        };
+
+        let html = get_link(&body["HtmlBody"].as_str().unwrap());
+        let plain_text = get_link(&body["TextBody"].as_str().unwrap());
+
+        (html, plain_text)
+    }
 }
 
 /// Spawns a new test app
@@ -64,6 +86,7 @@ pub async fn spawn_app() -> TestApp {
         c.database.database_name = Uuid::new_v4().to_string();
         c.application.port = 0;
         c.email_client.base_url = email_server.uri();
+        c.env = Environment::Testing;
         c
     };
 

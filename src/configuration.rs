@@ -10,7 +10,7 @@ use crate::{domain::SubscriberEmail, email_client::EmailClient};
 
 #[derive(Deserialize, Clone)]
 pub struct Settings {
-    pub env: Option<Environment>,
+    pub env: Environment,
     pub database: DatabaseSettings,
     pub application: ApplicationSettings,
     pub email_client: EmailClientSettings,
@@ -44,7 +44,7 @@ pub fn get_configuration() -> Result<Settings, config::ConfigError> {
     let out: Result<Settings, config::ConfigError> = settings.try_into();
 
     if let Ok(mut s) = out {
-        s.env = Some(environment);
+        s.env = environment;
         return Ok(s);
     }
 
@@ -56,10 +56,12 @@ pub struct ApplicationSettings {
     #[serde(deserialize_with = "deserialize_number_from_string")]
     pub port: u16,
     pub host: String,
+    pub base_url: String,
 }
 
 /// The possible runtime environment for our application.
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Debug)]
+#[serde(rename_all = "lowercase")]
 pub enum Environment {
     Local,
     Production,

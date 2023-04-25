@@ -6,7 +6,7 @@ use std::net::{self, TcpListener};
 use tracing::info;
 use tracing_actix_web::TracingLogger;
 
-use crate::configuration::{DatabaseSettings, Settings};
+use crate::configuration::{DatabaseSettings, Environment, Settings};
 use crate::email_client::EmailClient;
 use crate::routes::{confirm, health_check, subscribe};
 
@@ -22,14 +22,17 @@ impl Application {
         let email_client = config.email_client.client();
 
         let address = format!("{}:{}", config.application.host, config.application.port);
-        info!(
-            "App running on {} env with address {address}",
-            config.env.unwrap().as_str()
-        );
+        info!("App running on {:?} env with address {address}", config.env);
 
         let listener = net::TcpListener::bind(address)?;
         let port = listener.local_addr().unwrap().port();
-        let server = run(listener, conn_pool, email_client).await?;
+
+        let base_url = match config.env {
+            Environment::Testing => format!("http://127.0.0.1:{}", port),
+            _ => config.application.base_url,
+        };
+
+        let server = run(listener, conn_pool, email_client, base_url).await?;
 
         Ok(Self { port, server })
     }
@@ -54,9 +57,11 @@ async fn run(
     listener: TcpListener,
     conn_pool: Pool<Postgres>,
     email_client: EmailClient,
+    base_url: String,
 ) -> Result<Server, std::io::Error> {
     let db_conn = web::Data::new(conn_pool);
     let email_client = web::Data::new(email_client);
+    let base_url = web::Data::new(ApplicationBaseUrl(base_url));
 
     let server = HttpServer::new(move || {
         App::new()
@@ -66,8 +71,16 @@ async fn run(
             .route("/subscriptions/confirm", web::get().to(confirm))
             .app_data(db_conn.clone())
             .app_data(email_client.clone())
+            .app_data(base_url.clone())
     })
     .listen(listener)?
     .run();
     Ok(server)
 }
+
+// We need to define a wrapper type in order to retrieve the URL
+// in the `subscribe` handler.
+// Retrieval from the context, in actix-web, is type-based: using
+// a raw `String` would expose us to conflicts.
+#[derive(Clone)]
+pub struct ApplicationBaseUrl(pub String);
