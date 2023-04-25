@@ -8,7 +8,7 @@ use sqlx::{
 
 use crate::domain::SubscriberEmail;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct Settings {
     pub env: Option<Environment>,
     pub database: DatabaseSettings,
@@ -51,7 +51,7 @@ pub fn get_configuration() -> Result<Settings, config::ConfigError> {
     out
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct ApplicationSettings {
     #[serde(deserialize_with = "deserialize_number_from_string")]
     pub port: u16,
@@ -59,10 +59,11 @@ pub struct ApplicationSettings {
 }
 
 /// The possible runtime environment for our application.
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub enum Environment {
     Local,
     Production,
+    Testing,
 }
 
 impl Environment {
@@ -70,6 +71,7 @@ impl Environment {
         match self {
             Environment::Local => "local",
             Environment::Production => "production",
+            Environment::Testing => "testing",
         }
     }
 }
@@ -81,6 +83,7 @@ impl TryFrom<String> for Environment {
         match value.to_lowercase().as_str() {
             "local" => Ok(Self::Local),
             "production" => Ok(Self::Production),
+            "testing" => Ok(Self::Testing),
             other => Err(format!(
                 "{} is not a supported environment. Use either `local` or `production`.",
                 other
@@ -89,7 +92,7 @@ impl TryFrom<String> for Environment {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct DatabaseSettings {
     pub username: String,
     pub password: String,
@@ -125,7 +128,7 @@ impl DatabaseSettings {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct EmailClientSettings {
     pub base_url: String,
     pub sender_email: String,

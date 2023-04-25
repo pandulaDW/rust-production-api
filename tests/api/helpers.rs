@@ -1,10 +1,10 @@
 use once_cell::sync::Lazy;
+use reqwest::Response;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
-use std::net;
 use uuid::Uuid;
 use zero2prod::{
-    configuration::{get_configuration, DatabaseSettings, Settings},
-    email_client::EmailClient,
+    configuration::{self, get_configuration, DatabaseSettings, Settings},
+    startup::{build, run},
     telemetry,
 };
 
@@ -29,27 +29,21 @@ pub async fn spawn_app() -> (String, Settings) {
     // All other invocations will instead skip execution.
     Lazy::force(&TRACING);
 
-    let listener = net::TcpListener::bind("127.0.0.1:0").expect("failed to bind address");
-    let port = listener.local_addr().unwrap().port();
-
     let mut config = get_configuration().expect("failed to read configuration");
+    config.env = Some(configuration::Environment::Testing);
     config.database.database_name = Uuid::new_v4().to_string();
-    let conn_pool = configure_database(&config.database).await;
+    configure_database(&config.database).await;
 
-    let email_client = EmailClient::new(
-        config.email_client.base_url.clone(),
-        config.email_client.sender().expect("invalid sender email"),
-        config.email_client.auth_token.clone(),
-        config.email_client.timeout(),
-    );
+    let components = build(config.clone())
+        .await
+        .expect("failed to build the app components");
+    let port = components.listener.local_addr().unwrap().port();
 
-    let server = zero2prod::startup::run(listener, conn_pool, email_client)
-        .expect("failed to start the server");
-
+    let server = run(components).expect("failed to bind the listener to the server");
     // launch the server as a background task
     let _ = tokio::spawn(server);
 
-    (format!("127.0.0.1:{port}"), config)
+    (format!("127.0.0.1:{}", port), config)
 }
 
 /// creates a new test database and returns a connection to it
@@ -72,4 +66,16 @@ pub async fn configure_database(config: &DatabaseSettings) -> PgPool {
         .expect("failed to migrate the database");
 
     pool
+}
+
+/// Make post subscription requests
+pub async fn post_subscriptions(address: String, body: String) -> Response {
+    let client = reqwest::Client::new();
+    client
+        .post(&format!("http://{address}/subscriptions"))
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .body(body)
+        .send()
+        .await
+        .expect("failed to execute request.")
 }

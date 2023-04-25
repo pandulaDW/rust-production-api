@@ -1,5 +1,4 @@
-use crate::helpers::spawn_app;
-use reqwest::Response;
+use crate::helpers::{post_subscriptions, spawn_app};
 use sqlx::{Connection, PgConnection};
 
 #[tokio::test]
@@ -10,7 +9,7 @@ async fn subscribe_returns_a_200_for_valid_form_data() {
         .expect("failed to connect to Postgres");
 
     let body = "name=le%20guin&email=ursula_le_guin%40gmail.com";
-    let response = make_subscription_request(address.to_string(), body.to_string()).await;
+    let response = post_subscriptions(address.to_string(), body.to_string()).await;
 
     assert_eq!(200, response.status().as_u16());
 
@@ -33,7 +32,7 @@ async fn subscribe_returns_a_400_when_data_is_missing() {
     ];
 
     for (body, error_message) in test_cases {
-        let response = make_subscription_request(address.to_string(), body.to_string()).await;
+        let response = post_subscriptions(address.to_string(), body.to_string()).await;
 
         assert_eq!(
             400,
@@ -55,7 +54,7 @@ async fn subscribe_returns_a_200_when_fields_are_present_but_empty() {
     ];
 
     for (body, desc) in test_cases {
-        let response = make_subscription_request(address.to_string(), body.to_string()).await;
+        let response = post_subscriptions(address.to_string(), body.to_string()).await;
 
         assert_eq!(
             400,
@@ -64,15 +63,4 @@ async fn subscribe_returns_a_200_when_fields_are_present_but_empty() {
             desc
         );
     }
-}
-
-async fn make_subscription_request(address: String, body: String) -> Response {
-    let client = reqwest::Client::new();
-    client
-        .post(&format!("http://{address}/subscriptions"))
-        .header("Content-Type", "application/x-www-form-urlencoded")
-        .body(body)
-        .send()
-        .await
-        .expect("failed to execute request.")
 }
