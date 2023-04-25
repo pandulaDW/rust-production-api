@@ -40,8 +40,7 @@ impl EmailClient {
             text_body,
         };
 
-        let _response = self
-            .http_client
+        self.http_client
             .post(&url)
             .header("X-Postmark-Server-Token", self.auth_token.expose_secret())
             .json(&request_body)
