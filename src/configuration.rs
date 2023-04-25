@@ -6,7 +6,7 @@ use sqlx::{
     ConnectOptions,
 };
 
-use crate::domain::SubscriberEmail;
+use crate::{domain::SubscriberEmail, email_client::EmailClient};
 
 #[derive(Deserialize, Clone)]
 pub struct Settings {
@@ -137,6 +137,13 @@ pub struct EmailClientSettings {
 }
 
 impl EmailClientSettings {
+    /// Creates and returns a new email client
+    pub fn client(self) -> EmailClient {
+        let sender_email = self.sender().expect("Invalid sender email address.");
+        let timeout = self.timeout();
+        EmailClient::new(self.base_url, sender_email, self.auth_token, timeout)
+    }
+
     pub fn sender(&self) -> Result<SubscriberEmail, String> {
         SubscriberEmail::parse(self.sender_email.clone())
     }

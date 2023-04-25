@@ -1,20 +1,16 @@
-use crate::helpers::{post_subscriptions, spawn_app};
-use sqlx::{Connection, PgConnection};
+use crate::helpers::spawn_app;
 
 #[tokio::test]
 async fn subscribe_returns_a_200_for_valid_form_data() {
-    let (address, config) = spawn_app().await;
-    let mut db_conn = PgConnection::connect_with(&config.database.with_db())
-        .await
-        .expect("failed to connect to Postgres");
+    let app = spawn_app().await;
 
     let body = "name=le%20guin&email=ursula_le_guin%40gmail.com";
-    let response = post_subscriptions(address, body.to_string()).await;
+    let response = app.post_subscriptions(body.to_string()).await;
 
     assert_eq!(200, response.status().as_u16());
 
     let saved = sqlx::query!("SELECT email, name FROM subscriptions")
-        .fetch_one(&mut db_conn)
+        .fetch_one(&app.db_pool)
         .await
         .expect("Failed to fetch saved subscription.");
 
@@ -24,7 +20,7 @@ async fn subscribe_returns_a_200_for_valid_form_data() {
 
 #[tokio::test]
 async fn subscribe_returns_a_400_when_data_is_missing() {
-    let (address, _) = spawn_app().await;
+    let app = spawn_app().await;
     let test_cases = vec![
         ("name=le%20guin", "missing the email"),
         ("email=ursula_le_guin%40gmail.com", "missing the name"),
@@ -32,7 +28,7 @@ async fn subscribe_returns_a_400_when_data_is_missing() {
     ];
 
     for (body, error_message) in test_cases {
-        let response = post_subscriptions(address.clone(), body.to_string()).await;
+        let response = app.post_subscriptions(body.to_string()).await;
 
         assert_eq!(
             400,
@@ -45,7 +41,7 @@ async fn subscribe_returns_a_400_when_data_is_missing() {
 
 #[tokio::test]
 async fn subscribe_returns_a_200_when_fields_are_present_but_empty() {
-    let (address, _) = spawn_app().await;
+    let app = spawn_app().await;
 
     let test_cases = vec![
         ("name=&email=ursula_le_guin%40gmail.com", "empty name"),
@@ -54,7 +50,7 @@ async fn subscribe_returns_a_200_when_fields_are_present_but_empty() {
     ];
 
     for (body, desc) in test_cases {
-        let response = post_subscriptions(address.clone(), body.to_string()).await;
+        let response = app.post_subscriptions(body.to_string()).await;
 
         assert_eq!(
             400,
