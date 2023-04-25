@@ -9,7 +9,7 @@ async fn subscribe_returns_a_200_for_valid_form_data() {
         .expect("failed to connect to Postgres");
 
     let body = "name=le%20guin&email=ursula_le_guin%40gmail.com";
-    let response = post_subscriptions(address.to_string(), body.to_string()).await;
+    let response = post_subscriptions(address, body.to_string()).await;
 
     assert_eq!(200, response.status().as_u16());
 
@@ -32,7 +32,7 @@ async fn subscribe_returns_a_400_when_data_is_missing() {
     ];
 
     for (body, error_message) in test_cases {
-        let response = post_subscriptions(address.to_string(), body.to_string()).await;
+        let response = post_subscriptions(address.clone(), body.to_string()).await;
 
         assert_eq!(
             400,
@@ -54,7 +54,7 @@ async fn subscribe_returns_a_200_when_fields_are_present_but_empty() {
     ];
 
     for (body, desc) in test_cases {
-        let response = post_subscriptions(address.to_string(), body.to_string()).await;
+        let response = post_subscriptions(address.clone(), body.to_string()).await;
 
         assert_eq!(
             400,
