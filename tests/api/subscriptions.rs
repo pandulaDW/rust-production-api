@@ -8,12 +8,7 @@ use wiremock::{
 async fn subscribe_returns_a_200_for_valid_form_data() {
     let app = spawn_app().await;
     let body = "name=le%20guin&email=ursula_le_guin%40gmail.com";
-
-    Mock::given(path("/email"))
-        .and(method("POST"))
-        .respond_with(ResponseTemplate::new(200))
-        .mount(&app.email_server)
-        .await;
+    app.intercept_mock_email_server().await;
 
     let response = app.post_subscriptions(body.to_string()).await;
     assert_eq!(200, response.status().as_u16());
@@ -23,12 +18,7 @@ async fn subscribe_returns_a_200_for_valid_form_data() {
 async fn subscribe_persists_the_new_subscriber() {
     let app = spawn_app().await;
     let body = "name=le%20guin&email=ursula_le_guin%40gmail.com";
-
-    Mock::given(path("/email"))
-        .and(method("POST"))
-        .respond_with(ResponseTemplate::new(200))
-        .mount(&app.email_server)
-        .await;
+    app.intercept_mock_email_server().await;
 
     app.post_subscriptions(body.to_string()).await;
 
@@ -85,21 +75,6 @@ async fn subscribe_returns_a_200_when_fields_are_present_but_empty() {
 }
 
 #[tokio::test]
-async fn subscribe_sends_a_confirmation_email_for_valid_data() {
-    let app = spawn_app().await;
-    let body = "name=le%20guin&email=ursula_le_guin%40gmail.com";
-
-    Mock::given(path("/email"))
-        .and(method("POST"))
-        .respond_with(ResponseTemplate::new(200))
-        .expect(1)
-        .mount(&app.email_server)
-        .await;
-
-    app.post_subscriptions(body.into()).await;
-}
-
-#[tokio::test]
 async fn subscribe_sends_a_confirmation_email_with_a_link() {
     let app = spawn_app().await;
     let body = "name=le%20guin&email=ursula_le_guin%40gmail.com";
@@ -117,4 +92,29 @@ async fn subscribe_sends_a_confirmation_email_with_a_link() {
     let email_request = &app.email_server.received_requests().await.unwrap()[0];
     let (html_link, text_link) = app.get_confirmation_links(email_request);
     assert_eq!(html_link, text_link);
+}
+
+#[tokio::test]
+async fn subscribe_saves_subscription_token() {
+    let app = spawn_app().await;
+    let body = "name=le%20guin&email=ursula_le_guin%40gmail.com";
+    app.intercept_mock_email_server().await;
+
+    app.post_subscriptions(body.into()).await;
+
+    let saved_user = sqlx::query!("SELECT id FROM subscriptions")
+        .fetch_one(&app.db_pool)
+        .await
+        .unwrap();
+    let sub_id = saved_user.id;
+
+    let saved = sqlx::query!(
+        "SELECT * FROM subscription_tokens WHERE subscriber_id=$1",
+        sub_id
+    )
+    .fetch_one(&app.db_pool)
+    .await
+    .unwrap();
+
+    assert_eq!(saved.subscription_token.len(), 25);
 }

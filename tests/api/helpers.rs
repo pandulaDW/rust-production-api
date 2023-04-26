@@ -3,7 +3,10 @@ use reqwest::{Response, Url};
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use tokio::task::AbortHandle;
 use uuid::Uuid;
-use wiremock::{MockServer, Request};
+use wiremock::{
+    matchers::{method, path},
+    Mock, MockServer, Request, ResponseTemplate,
+};
 use zero2prod::{
     configuration::{get_configuration, DatabaseSettings, Environment},
     startup::{get_connection_pool, Application},
@@ -69,6 +72,15 @@ impl TestApp {
         let plain_text = get_link(&body["TextBody"].as_str().unwrap());
 
         (html, plain_text)
+    }
+
+    /// Intercepts the calls made to the mock email server and returns a 200 response
+    pub async fn intercept_mock_email_server(&self) {
+        Mock::given(path("/email"))
+            .and(method("POST"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&self.email_server)
+            .await;
     }
 }
 
