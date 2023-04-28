@@ -1,5 +1,6 @@
 use actix_web::web::{Data, Form};
 use actix_web::HttpResponse;
+use anyhow::Context;
 use chrono::Utc;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
@@ -32,7 +33,10 @@ pub async fn subscribe(
     base_url: Data<ApplicationBaseUrl>,
 ) -> Result<HttpResponse, SubscribeError> {
     let new_subscriber = form.0.try_into().map_err(SubscribeError::ValidationError)?;
-    let mut transaction = pool.begin().await.map_err(SubscribeError::PoolError)?;
+    let mut transaction = pool
+        .begin()
+        .await
+        .context("Failed to acquire a Postgres connection from the pool")?;
 
     let subscriber_id = insert_subscriber(&mut transaction, &new_subscriber).await?;
 
@@ -42,7 +46,7 @@ pub async fn subscribe(
     transaction
         .commit()
         .await
-        .map_err(SubscribeError::TransactionCommitError)?;
+        .context("Failed to commit SQL transaction to store a new subscriber")?;
 
     send_confirmation_email(&email_client, new_subscriber, &base_url.0, &sub_token).await?;
 
@@ -65,7 +69,7 @@ async fn insert_subscriber(
     )
     .execute(tx)
     .await
-    .map_err(SubscribeError::InsertSubscriberError)?;
+    .context("Failed to store the confirmation token for a new subscriber")?;
 
     Ok(subscriber_id)
 }
@@ -95,7 +99,8 @@ async fn send_confirmation_email(
                 confirmation_link
             ),
         )
-        .await?;
+        .await
+        .context("Failed to send a confirmation email")?;
     Ok(())
 }
 
@@ -104,20 +109,8 @@ pub enum SubscribeError {
     #[error("{0}")]
     ValidationError(String),
 
-    #[error("Failed to acquire a Postgres connection from the pool")]
-    PoolError(#[source] sqlx::Error),
-
-    #[error("Failed to insert new subscriber in the database.")]
-    InsertSubscriberError(#[source] sqlx::Error),
-
-    #[error("Failed to store the confirmation token for a new subscriber.")]
-    StoreTokenError(#[source] sqlx::Error),
-
-    #[error("Failed to commit SQL transaction to store a new subscriber.")]
-    TransactionCommitError(#[source] sqlx::Error),
-
-    #[error("Failed to send a confirmation email.")]
-    SendEmailError(#[from] reqwest::Error),
+    #[error(transparent)]
+    UnexpectedError(#[from] anyhow::Error),
 }
 
 impl std::fmt::Debug for SubscribeError {
@@ -130,7 +123,7 @@ impl actix_web::ResponseError for SubscribeError {
     fn status_code(&self) -> reqwest::StatusCode {
         match self {
             Self::ValidationError(_) => reqwest::StatusCode::BAD_REQUEST,
-            _ => reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+            Self::UnexpectedError(_) => reqwest::StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -151,7 +144,7 @@ async fn store_token(
     )
     .execute(tx)
     .await
-    .map_err(SubscribeError::StoreTokenError)?;
+    .context("Failed to store the confirmation token for a new subscriber")?;
     Ok(())
 }
 
