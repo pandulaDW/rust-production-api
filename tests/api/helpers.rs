@@ -74,13 +74,20 @@ impl TestApp {
         (html, plain_text)
     }
 
-    /// Intercepts the calls made to the mock email server and returns a 200 response
-    pub async fn intercept_mock_email_server(&self) {
-        Mock::given(path("/email"))
+    /// Use the public API of the application under test to create
+    /// an unconfirmed subscriber.
+    pub async fn create_unconfirmed_subscriber(&self, body: String) {
+        let _guard = Mock::given(path("/email"))
             .and(method("POST"))
             .respond_with(ResponseTemplate::new(200))
-            .mount(&self.email_server)
+            .expect(1)
+            .mount_as_scoped(&self.email_server)
             .await;
+
+        self.post_subscriptions(body)
+            .await
+            .error_for_status()
+            .unwrap();
     }
 }
 
