@@ -1,11 +1,11 @@
+use crate::{domain::SubscriberEmail, email_client::EmailClient, utils};
 use actix_web::{
     web::{Data, Json},
     HttpResponse, ResponseError,
 };
-use anyhow::{anyhow, Context};
+use anyhow::anyhow;
+use futures::{stream::FuturesUnordered, StreamExt};
 use sqlx::PgPool;
-
-use crate::{domain::SubscriberEmail, email_client::EmailClient, utils};
 
 #[derive(serde::Deserialize)]
 pub struct BodyData {
@@ -26,34 +26,79 @@ pub async fn publish_newsletter(
     email_client: Data<EmailClient>,
 ) -> Result<HttpResponse, PublishError> {
     let subscribers = get_confirmed_subscribers(&pool).await?;
+    process_all_subscribers(subscribers, Data::new(body.0), email_client).await;
+    Ok(HttpResponse::Ok().finish())
+}
 
-    for subscriber in subscribers {
-        match subscriber {
-            Ok(subscriber) => email_client
-                .send_email(
-                    &subscriber.email,
-                    &body.title,
-                    &body.content.html,
-                    &body.content.text,
-                )
-                .await
-                .with_context(|| {
-                    format!(
-                        "Failed to send newsletter issue to {}",
-                        subscriber.email.as_ref()
-                    )
-                })?,
-            Err(error) => {
-                tracing::warn!(
-                error.cause_chain = ?error,
-                "Skipping a confirmed subscriber. \
-                Their stored contact details are invalid",
-                );
+/// Takes the subscribers, create and process the subscribers in chunks.
+async fn process_all_subscribers(
+    subscribers: Vec<anyhow::Result<ConfirmedSubscriber>>,
+    body: Data<BodyData>,
+    email_client: Data<EmailClient>,
+) {
+    let mut iter = subscribers.into_iter();
+    let mut num_processed = 0;
+    let num_subscribers = iter.len();
+    let chunk_size = 20;
+
+    while num_processed <= num_subscribers {
+        let chunk = iter.by_ref().take(chunk_size).collect::<Vec<_>>();
+
+        // process the chunk in parallel
+        if let Err(e) = tokio::spawn(process_subscriber_chunk(
+            chunk,
+            body.clone(),
+            email_client.clone(),
+        ))
+        .await
+        {
+            tracing::warn!("Failed to execute newsletter sending task: {e}");
+        };
+
+        // timeout to not overwhelm the email server
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+        num_processed += chunk_size;
+    }
+}
+
+/// Sends newsletters to each subscriber in parallel
+async fn process_subscriber_chunk(
+    chunk: Vec<anyhow::Result<ConfirmedSubscriber>>,
+    body: Data<BodyData>,
+    email_client: Data<EmailClient>,
+) {
+    let mut futures = FuturesUnordered::new();
+    for subscriber in chunk {
+        futures.push(async {
+            match subscriber {
+                Ok(subscriber) => {
+                    email_client
+                        .send_email(
+                            &subscriber.email,
+                            &body.title,
+                            &body.content.html,
+                            &body.content.text,
+                        )
+                        .await
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        error.cause_chain = ?error,
+                        "Skipping a confirmed subscriber. \
+                    Their stored contact details are invalid",
+                    );
+                    Ok(())
+                }
             }
-        }
+        });
     }
 
-    Ok(HttpResponse::Ok().finish())
+    while let Some(result) = futures.next().await {
+        if result.is_err() {
+            tracing::warn!("Failed to send newsletter issue");
+        }
+    }
 }
 
 struct ConfirmedSubscriber {
@@ -63,7 +108,7 @@ struct ConfirmedSubscriber {
 #[tracing::instrument(name = "Get confirmed subscribers", skip(pool))]
 async fn get_confirmed_subscribers(
     pool: &PgPool,
-) -> anyhow::Result<Vec<Result<ConfirmedSubscriber, anyhow::Error>>> {
+) -> anyhow::Result<Vec<anyhow::Result<ConfirmedSubscriber>>> {
     let out = sqlx::query!(r#"SELECT email FROM subscriptions WHERE status = 'confirmed'"#,)
         .fetch_all(pool)
         .await?

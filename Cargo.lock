@@ -2852,6 +2852,7 @@ dependencies = [
  "claims",
  "config",
  "fake",
+ "futures",
  "linkify",
  "once_cell",
  "quickcheck",
