@@ -9,6 +9,7 @@ use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::startup::ApplicationBaseUrl;
+use crate::utils;
 use crate::{domain::NewSubscriber, email_client::EmailClient};
 
 #[derive(Deserialize)]
@@ -87,7 +88,7 @@ async fn send_confirmation_email(
     let confirmation_link = format!("{base_url}/subscriptions/confirm?subscription_token={token}");
     client
         .send_email(
-            subscriber.email,
+            &subscriber.email,
             "Welcome!",
             &format!(
                 "Welcome to our newsletter!<br />\
@@ -115,7 +116,7 @@ pub enum SubscribeError {
 
 impl std::fmt::Debug for SubscribeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        error_chain_fmt(self, f)
+        utils::error_chain_fmt(self, f)
     }
 }
 
@@ -155,16 +156,4 @@ fn generate_subscription_token() -> String {
         .map(char::from)
         .take(25)
         .collect()
-}
-
-fn error_chain_fmt(e: impl std::error::Error, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    writeln!(f, "{}\n", e)?;
-    let mut current = e.source();
-
-    while let Some(cause) = current {
-        writeln!(f, "Caused by:\n\t{}", cause)?;
-        current = cause.source();
-    }
-
-    Ok(())
 }

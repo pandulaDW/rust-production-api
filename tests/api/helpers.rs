@@ -75,8 +75,8 @@ impl TestApp {
     }
 
     /// Use the public API of the application under test to create
-    /// an unconfirmed subscriber.
-    pub async fn create_unconfirmed_subscriber(&self, body: String) {
+    /// an unconfirmed subscriber and return the confirmation link received
+    pub async fn create_unconfirmed_subscriber(&self, body: String) -> Url {
         let _guard = Mock::given(path("/email"))
             .and(method("POST"))
             .respond_with(ResponseTemplate::new(200))
@@ -88,6 +88,36 @@ impl TestApp {
             .await
             .error_for_status()
             .unwrap();
+
+        let email_request = self
+            .email_server
+            .received_requests()
+            .await
+            .unwrap()
+            .pop()
+            .unwrap();
+
+        self.get_confirmation_links(&email_request).0
+    }
+
+    /// creates a confirmed subscriber
+    pub async fn create_confirmed_subscriber(&self, body: String) {
+        let confirmation_link = self.create_unconfirmed_subscriber(body).await;
+        reqwest::get(confirmation_link)
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap();
+    }
+
+    /// post a newsletter
+    pub async fn post_newsletters(&self, body: serde_json::Value) -> reqwest::Response {
+        reqwest::Client::new()
+            .post(&format!("{}/newsletters", &self.address))
+            .json(&body)
+            .send()
+            .await
+            .expect("Failed to execute request.")
     }
 }
 
