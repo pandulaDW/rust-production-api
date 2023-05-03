@@ -1,4 +1,4 @@
-use crate::helpers::spawn_app;
+use crate::helpers::{new_sub_request_body, spawn_app};
 
 #[tokio::test]
 async fn confirmations_without_token_are_rejected_with_a_400() {
@@ -14,8 +14,8 @@ async fn confirmations_without_token_are_rejected_with_a_400() {
 #[tokio::test]
 async fn the_link_returned_by_subscribe_returns_a_200_if_called() {
     let app = spawn_app().await;
-    let body = "name=le%20guin&email=ursula_le_guin%40gmail.com";
-    app.create_unconfirmed_subscriber(body.into()).await;
+    app.create_unconfirmed_subscriber(new_sub_request_body())
+        .await;
 
     let email_request = &app.email_server.received_requests().await.unwrap()[0];
     let (confirmation_link, _) = app.get_confirmation_links(email_request);

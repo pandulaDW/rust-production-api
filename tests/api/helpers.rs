@@ -191,3 +191,19 @@ impl Drop for TestApp {
         self.app_abort_handler.abort();
     }
 }
+
+/// returns a request body for creating a new subscriber
+pub fn new_sub_request_body() -> String {
+    use fake::{
+        faker::{
+            internet::en::SafeEmail,
+            name::en::{FirstName, LastName},
+        },
+        Fake,
+    };
+
+    let f_name = FirstName().fake::<String>();
+    let l_name = LastName().fake::<String>();
+    let email = SafeEmail().fake::<String>().replace("@", "%40");
+    format!("name={f_name}%20{l_name}&email={email}")
+}

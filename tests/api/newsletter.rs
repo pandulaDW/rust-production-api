@@ -1,4 +1,4 @@
-use crate::helpers::spawn_app;
+use crate::helpers::{new_sub_request_body, spawn_app};
 use wiremock::{
     matchers::{any, method, path},
     Mock, ResponseTemplate,
@@ -7,7 +7,7 @@ use wiremock::{
 #[tokio::test]
 async fn newsletters_are_not_delivered_to_unconfirmed_subscribers() {
     let app = spawn_app().await;
-    app.create_unconfirmed_subscriber("name=le%20guin&email=ursula_le_guin%40gmail.com".into())
+    app.create_unconfirmed_subscriber(new_sub_request_body())
         .await;
 
     Mock::given(any())
@@ -33,7 +33,7 @@ async fn newsletters_are_not_delivered_to_unconfirmed_subscribers() {
 #[tokio::test]
 async fn newsletters_are_delivered_to_confirmed_subscribers() {
     let app = spawn_app().await;
-    app.create_confirmed_subscriber("name=le%20guin&email=ursula_le_guin%40gmail.com".into())
+    app.create_confirmed_subscriber(new_sub_request_body())
         .await;
 
     Mock::given(path("/email"))
@@ -88,4 +88,33 @@ async fn newsletters_returns_400_for_invalid_data() {
             error
         );
     }
+}
+
+#[tokio::test]
+async fn newsletters_are_delivered_to_multiple_subscribers() {
+    let app = spawn_app().await;
+    let num_new_subscribers = 45;
+
+    for _ in 1..=num_new_subscribers {
+        app.create_confirmed_subscriber(new_sub_request_body())
+            .await;
+    }
+
+    Mock::given(path("/email"))
+        .and(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(num_new_subscribers)
+        .mount(&app.email_server)
+        .await;
+
+    let newsletter_request_body = serde_json::json!({
+        "title": "Newsletter title",
+        "content": {
+            "text": "Newsletter body as plain text",
+            "html": "<p>Newsletter body as HTML</p>",
+        }
+    });
+
+    app.post_newsletters(newsletter_request_body).await;
+    // Mock verifies on Drop that we have sent the newsletter email to each subscriber
 }
