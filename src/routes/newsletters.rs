@@ -1,11 +1,14 @@
 use crate::{domain::SubscriberEmail, email_client::EmailClient, utils};
 use actix_web::{
+    http::header,
     web::{Data, Json},
-    HttpResponse, ResponseError,
+    HttpRequest, HttpResponse, ResponseError,
 };
 use anyhow::anyhow;
 use futures::{stream::FuturesUnordered, StreamExt};
 use sqlx::PgPool;
+
+use super::auth::basic_authentication;
 
 #[derive(serde::Deserialize)]
 pub struct BodyData {
@@ -24,9 +27,14 @@ pub async fn publish_newsletter(
     body: Json<BodyData>,
     pool: Data<PgPool>,
     email_client: Data<EmailClient>,
+    request: HttpRequest,
 ) -> Result<HttpResponse, PublishError> {
+    basic_authentication(request.headers()).map_err(PublishError::AuthError)?;
+
     let subscribers = get_confirmed_subscribers(&pool).await?;
+
     process_all_subscribers(subscribers, Data::new(body.0), email_client).await;
+
     Ok(HttpResponse::Ok().finish())
 }
 
@@ -124,6 +132,9 @@ async fn get_confirmed_subscribers(
 
 #[derive(thiserror::Error)]
 pub enum PublishError {
+    #[error("Authentication failed")]
+    AuthError(#[source] anyhow::Error),
+
     #[error(transparent)]
     UnexpectedError(#[from] anyhow::Error),
 }
@@ -135,9 +146,19 @@ impl std::fmt::Debug for PublishError {
 }
 
 impl ResponseError for PublishError {
-    fn status_code(&self) -> reqwest::StatusCode {
+    fn error_response(&self) -> HttpResponse {
+        use reqwest::{header::HeaderValue, StatusCode};
+
         match self {
-            Self::UnexpectedError(_) => reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+            Self::UnexpectedError(_) => HttpResponse::new(StatusCode::INTERNAL_SERVER_ERROR),
+            Self::AuthError(_) => {
+                let mut response = HttpResponse::new(StatusCode::UNAUTHORIZED);
+                let header_value = HeaderValue::from_str(r#"Basic realm="publish""#).unwrap();
+                response
+                    .headers_mut()
+                    .insert(header::WWW_AUTHENTICATE, header_value);
+                response
+            }
         }
     }
 }
