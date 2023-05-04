@@ -8,7 +8,7 @@ use anyhow::anyhow;
 use futures::{stream::FuturesUnordered, StreamExt};
 use sqlx::PgPool;
 
-use super::auth::basic_authentication;
+use super::auth::{basic_authentication, validate_credentials};
 
 #[derive(serde::Deserialize)]
 pub struct BodyData {
@@ -22,17 +22,29 @@ pub struct Content {
     text: String,
 }
 
-#[tracing::instrument(name = "Publish Newsletter", skip(body, pool, email_client))]
+#[tracing::instrument(
+    name = "Publish Newsletter", 
+    skip(body, pool, email_client),
+    fields(username=tracing::field::Empty, user_id=tracing::field::Empty))
+]
 pub async fn publish_newsletter(
     body: Json<BodyData>,
     pool: Data<PgPool>,
     email_client: Data<EmailClient>,
     request: HttpRequest,
 ) -> Result<HttpResponse, PublishError> {
-    basic_authentication(request.headers()).map_err(PublishError::AuthError)?;
+    // extract credentials
+    let credentials = basic_authentication(request.headers()).map_err(PublishError::AuthError)?;
+    tracing::Span::current().record("username", &tracing::field::display(&credentials.username));
 
+    // validate credentials
+    let user_id = validate_credentials(&credentials, &pool)
+        .await
+        .map_err(PublishError::AuthError)?;
+    tracing::Span::current().record("user_id", &tracing::field::display(&user_id));
+
+    // process subscribers
     let subscribers = get_confirmed_subscribers(&pool).await?;
-
     process_all_subscribers(subscribers, Data::new(body.0), email_client).await;
 
     Ok(HttpResponse::Ok().finish())

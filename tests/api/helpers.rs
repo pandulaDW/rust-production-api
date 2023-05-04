@@ -112,13 +112,24 @@ impl TestApp {
 
     /// post a newsletter
     pub async fn post_newsletters(&self, body: serde_json::Value) -> reqwest::Response {
+        let (username, password) = self.test_user().await;
+
         reqwest::Client::new()
             .post(&format!("{}/newsletters", &self.address))
-            .basic_auth(Uuid::new_v4().to_string(), Some(Uuid::new_v4().to_string()))
+            .basic_auth(username, Some(password))
             .json(&body)
             .send()
             .await
             .expect("Failed to execute request.")
+    }
+
+    /// Helper method to retrieve the spawned app's only user's credentials
+    pub async fn test_user(&self) -> (String, String) {
+        let row = sqlx::query!("SELECT username, password FROM users LIMIT 1")
+            .fetch_one(&self.db_pool)
+            .await
+            .expect("Failed to fetch test users");
+        (row.username, row.password)
     }
 }
 
@@ -160,6 +171,8 @@ pub async fn spawn_app() -> TestApp {
         app_abort_handler: t.abort_handle(),
     };
 
+    add_test_user(&test_app.db_pool).await;
+
     test_app
 }
 
@@ -193,18 +206,31 @@ impl Drop for TestApp {
     }
 }
 
+use fake::{
+    faker::{
+        internet::en::{Password, SafeEmail},
+        name::en::{FirstName, LastName},
+    },
+    Fake,
+};
+
 /// returns a request body for creating a new subscriber
 pub fn new_sub_request_body() -> String {
-    use fake::{
-        faker::{
-            internet::en::SafeEmail,
-            name::en::{FirstName, LastName},
-        },
-        Fake,
-    };
-
     let f_name = FirstName().fake::<String>();
     let l_name = LastName().fake::<String>();
     let email = SafeEmail().fake::<String>().replace("@", "%40");
     format!("name={f_name}%20{l_name}&email={email}")
+}
+
+/// inserts a new test user in the db
+async fn add_test_user(pool: &PgPool) {
+    sqlx::query!(
+        "INSERT INTO users (user_id, username, password) VALUES ($1, $2, $3)",
+        Uuid::new_v4(),
+        FirstName().fake::<String>(),
+        Password(8..16).fake::<String>(),
+    )
+    .execute(pool)
+    .await
+    .expect("Failed to create test user");
 }

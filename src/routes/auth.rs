@@ -1,10 +1,12 @@
 use actix_web::http::header::HeaderMap;
 use anyhow::{anyhow, Context, Result};
-use secrecy::Secret;
+use secrecy::{ExposeSecret, Secret};
+use sqlx::PgPool;
+use uuid::Uuid;
 
 pub struct Credentials {
-    _username: String,
-    _password: Secret<String>,
+    pub username: String,
+    pub password: Secret<String>,
 }
 
 pub fn basic_authentication(headers: &HeaderMap) -> Result<Credentials> {
@@ -35,7 +37,22 @@ pub fn basic_authentication(headers: &HeaderMap) -> Result<Credentials> {
         .to_string();
 
     Ok(Credentials {
-        _username: username,
-        _password: Secret::new(password),
+        username,
+        password: Secret::new(password),
     })
+}
+
+pub async fn validate_credentials(credentials: &Credentials, pool: &PgPool) -> Result<Uuid> {
+    let user_id: Option<_> = sqlx::query!(
+        r#"SELECT user_id FROM users WHERE username = $1 AND password = $2"#,
+        credentials.username,
+        credentials.password.expose_secret()
+    )
+    .fetch_optional(pool)
+    .await
+    .context("Failed to perform a query to validate auth credentials.")?;
+
+    user_id
+        .map(|row| row.user_id)
+        .ok_or_else(|| anyhow!("Invalid username or password."))
 }
