@@ -1,4 +1,4 @@
-mod auth;
+pub mod auth;
 mod health_check;
 mod newsletters;
 mod subscriptions;

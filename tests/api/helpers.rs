@@ -9,6 +9,7 @@ use wiremock::{
 };
 use zero2prod::{
     configuration::{get_configuration, DatabaseSettings, Environment},
+    routes::auth,
     startup::{get_connection_pool, Application},
     telemetry,
 };
@@ -28,13 +29,41 @@ static TRACING: Lazy<()> = Lazy::new(|| {
     }
 });
 
+pub struct TestUser {
+    pub user_id: Uuid,
+    pub username: String,
+    pub password: String,
+}
+
+impl TestUser {
+    pub fn generate() -> Self {
+        Self {
+            user_id: Uuid::new_v4(),
+            username: FirstName().fake::<String>(),
+            password: Password(8..16).fake::<String>(),
+        }
+    }
+
+    async fn store(&self, pool: &PgPool) {
+        sqlx::query!(
+            "INSERT INTO users (user_id, username, password_hash) VALUES ($1, $2, $3)",
+            self.user_id,
+            &self.username,
+            auth::hash_password(&self.password).unwrap(),
+        )
+        .execute(pool)
+        .await
+        .expect("Failed to create test user");
+    }
+}
+
 pub struct TestApp {
     pub address: String,
     pub port: u16,
     pub db_pool: PgPool,
     pub email_server: MockServer,
     pub app_abort_handler: AbortHandle,
-    // pub test_user: TestUser,
+    pub test_user: TestUser,
     // pub api_client: reqwest::Client,
     // pub email_client: EmailClient,
 }
@@ -112,24 +141,13 @@ impl TestApp {
 
     /// post a newsletter
     pub async fn post_newsletters(&self, body: serde_json::Value) -> reqwest::Response {
-        let (username, password) = self.test_user().await;
-
         reqwest::Client::new()
             .post(&format!("{}/newsletters", &self.address))
-            .basic_auth(username, Some(password))
+            .basic_auth(&self.test_user.username, Some(&self.test_user.password))
             .json(&body)
             .send()
             .await
             .expect("Failed to execute request.")
-    }
-
-    /// Helper method to retrieve the spawned app's only user's credentials
-    pub async fn test_user(&self) -> (String, String) {
-        let row = sqlx::query!("SELECT username, password FROM users LIMIT 1")
-            .fetch_one(&self.db_pool)
-            .await
-            .expect("Failed to fetch test users");
-        (row.username, row.password)
     }
 }
 
@@ -163,15 +181,20 @@ pub async fn spawn_app() -> TestApp {
     // launch the server as a background task and return its handle
     let t = tokio::spawn(app.run_until_stopped());
 
+    // create a test user
+    let test_user = TestUser::generate();
+    test_user
+        .store(&get_connection_pool(&config.database))
+        .await;
+
     let test_app = TestApp {
         address: format!("http://localhost:{}", application_port),
         port: application_port,
         db_pool: get_connection_pool(&config.database),
         email_server,
         app_abort_handler: t.abort_handle(),
+        test_user,
     };
-
-    add_test_user(&test_app.db_pool).await;
 
     test_app
 }
@@ -220,17 +243,4 @@ pub fn new_sub_request_body() -> String {
     let l_name = LastName().fake::<String>();
     let email = SafeEmail().fake::<String>().replace("@", "%40");
     format!("name={f_name}%20{l_name}&email={email}")
-}
-
-/// inserts a new test user in the db
-async fn add_test_user(pool: &PgPool) {
-    sqlx::query!(
-        "INSERT INTO users (user_id, username, password) VALUES ($1, $2, $3)",
-        Uuid::new_v4(),
-        FirstName().fake::<String>(),
-        Password(8..16).fake::<String>(),
-    )
-    .execute(pool)
-    .await
-    .expect("Failed to create test user");
 }
