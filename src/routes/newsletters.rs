@@ -8,7 +8,7 @@ use anyhow::anyhow;
 use futures::{stream::FuturesUnordered, StreamExt};
 use sqlx::PgPool;
 
-use super::auth::{basic_authentication, validate_credentials};
+use super::auth::{basic_authentication, validate_credentials, AuthError};
 
 #[derive(serde::Deserialize)]
 pub struct BodyData {
@@ -40,7 +40,10 @@ pub async fn publish_newsletter(
     // validate credentials
     let user_id = validate_credentials(&credentials, &pool)
         .await
-        .map_err(PublishError::AuthError)?;
+        .map_err(|e| match e {
+            AuthError::InvalidCredentials(_) => PublishError::AuthError(e.into()),
+            AuthError::UnexpectedError(_) => PublishError::UnexpectedError(e.into()),
+        })?;
     tracing::Span::current().record("user_id", &tracing::field::display(&user_id));
 
     // process subscribers

@@ -1,5 +1,5 @@
 use actix_web::http::header::HeaderMap;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Context};
 use argon2::{password_hash::SaltString, Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use secrecy::{ExposeSecret, Secret};
 use sqlx::PgPool;
@@ -10,7 +10,16 @@ pub struct Credentials {
     pub password: Secret<String>,
 }
 
-pub fn basic_authentication(headers: &HeaderMap) -> Result<Credentials> {
+#[derive(thiserror::Error, Debug)]
+pub enum AuthError {
+    #[error("Invalid credentials")]
+    InvalidCredentials(#[source] anyhow::Error),
+
+    #[error(transparent)]
+    UnexpectedError(#[from] anyhow::Error),
+}
+
+pub fn basic_authentication(headers: &HeaderMap) -> Result<Credentials, anyhow::Error> {
     let header_value = headers
         .get("Authorization")
         .context("The 'Authorization' header was missing")?
@@ -43,46 +52,49 @@ pub fn basic_authentication(headers: &HeaderMap) -> Result<Credentials> {
     })
 }
 
-pub async fn validate_credentials(credentials: &Credentials, pool: &PgPool) -> Result<Uuid> {
+pub async fn validate_credentials(creds: &Credentials, pool: &PgPool) -> Result<Uuid, AuthError> {
     let row: Option<_> = sqlx::query!(
         r#"SELECT user_id, password_hash FROM users WHERE username = $1"#,
-        credentials.username,
+        creds.username,
     )
     .fetch_optional(pool)
     .await
-    .context("Failed to perform a query to validate auth credentials.")?;
+    .context("Failed to perform a query to validate auth credentials.")
+    .map_err(AuthError::UnexpectedError)?;
 
     let (expected_hash, user_id) = match row {
         Some(row) => (row.password_hash, row.user_id),
-        None => return Err(anyhow!("Unknown username")),
+        None => return Err(AuthError::InvalidCredentials(anyhow!("Unknown username")).into()),
     };
 
-    verify_password(
-        credentials.password.expose_secret().to_string(),
-        expected_hash,
-    )
-    .await?;
+    verify_password(creds.password.expose_secret().to_string(), expected_hash).await?;
 
     Ok(user_id)
 }
 
-pub async fn verify_password(received_password: String, expected_hash: String) -> Result<()> {
+pub async fn verify_password(received: String, expected_hash: String) -> Result<(), AuthError> {
     tokio::task::spawn_blocking(move || {
         let expected_password_hash = PasswordHash::new(&expected_hash)
-            .context("Failed to parse hash in PHC string format")?;
+            .context("Failed to parse hash in PHC string format")
+            .map_err(AuthError::UnexpectedError)?;
 
         Argon2::default()
-            .verify_password(received_password.as_bytes(), &expected_password_hash)
+            .verify_password(received.as_bytes(), &expected_password_hash)
             .context("Invalid password")
+            .map_err(AuthError::InvalidCredentials)?;
+
+        Ok(())
     })
     .await
-    .context("Failed to spawn blocking task")?
+    .context("Failed to spawn blocking task")
+    .map_err(AuthError::UnexpectedError)?
 }
 
-pub fn hash_password(password: &str) -> Result<String> {
+pub fn hash_password(password: &str) -> Result<String, AuthError> {
     let salt = SaltString::generate(&mut rand::thread_rng());
     let password_hash = Argon2::default()
         .hash_password(password.as_bytes(), &salt)
-        .context("Failed to hash the password")?;
+        .context("Failed to hash the password")
+        .map_err(AuthError::UnexpectedError)?;
     Ok(password_hash.to_string())
 }
